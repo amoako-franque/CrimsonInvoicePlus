@@ -1,4 +1,5 @@
 const rateLimit = require("express-rate-limit")
+const { systemLogs } = require("./logger")
 
 const apiLimiter = rateLimit({
 	windowMs: 15 * 60 * 1000,
@@ -21,7 +22,7 @@ const loginLimiter = rateLimit({
 	message: "Too many requests from this IP, please try again after 30 minutes",
 	handler: (req, res, next, options) => {
 		systemLogs.error(
-			`Too many login requests fron this IP address. Please try again later: ${options.message.message}\t${req.method}\t${req.url}\t${req.headers.origin}`
+			`Too many login requests from this IP address. Please try again later: ${options.message.message}\t${req.method}\t${req.url}\t${req.headers.origin}`
 		)
 		res.status(options.statusCode).json({
 			message: options.message,

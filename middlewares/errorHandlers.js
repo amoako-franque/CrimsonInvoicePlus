@@ -14,7 +14,7 @@ const notFound = (req, res, next) => {
 		`The url requested cannot be found - ${req.originalUrl}`
 	)
 	res.status(404)
-	next(error)
+	next(error?.message)
 }
 
 module.exports = { errorHandler, notFound }

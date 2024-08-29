@@ -26,13 +26,6 @@ const userSchema = new mongoose.Schema(
 			required: true,
 			trim: true,
 			unique: true,
-			validate: {
-				validator: function (value) {
-					return /^[a-z][A-Z0-9-_]{3-23}$/.test(value)
-				},
-				message:
-					"Username must start with a letter and can only contain letters, numbers, underscores and hyphens",
-			},
 		},
 		email: {
 			type: String,
@@ -46,11 +39,7 @@ const userSchema = new mongoose.Schema(
 			type: String,
 			required: true,
 			trim: true,
-
-			validate: [
-				validator.isStrongPassword,
-				"Password must be at least 8 characters with at least 1 uppercase and lowercase letters, 1 numeric and 1 symbol",
-			],
+			minlength: 8,
 		},
 		isVerified: {
 			type: Boolean,

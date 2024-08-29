@@ -2,6 +2,7 @@ const express = require("express")
 const cors = require("cors")
 require("dotenv").config()
 const path = require("path")
+const fs = require("fs")
 const morgan = require("morgan")
 const colors = require("colors")
 const cookieParser = require("cookie-parser")
@@ -12,7 +13,7 @@ const { notFound, errorHandler } = require("./middlewares/errorHandlers")
 const { morganMiddleware } = require("./middlewares/logger")
 
 // connection to database
-// mongodbConnection()
+mongodbConnection()
 
 const app = express()
 
@@ -28,11 +29,22 @@ app.use(cookieParser())
 app.use(ExpressMongoSanitize())
 app.use(morganMiddleware)
 
-app.post("/", (req, res) => {
-	res.status(200).json({ msg: "Crimson Invoice Plus" })
+app.get("/", (req, res) => {
+	res.redirect("http://localhost:4789/logs")
+	// res.status(200).json({ msg: "Crimson Invoice Plus" })
+})
+
+app.get("/logs", (req, res) => {
+	res.status(200).json({ msg: "Welcome home to Crimson Invoice Plus" })
 })
 
 const PORT = process.env.PORT || 4789
+
+// routes
+fs.readdirSync(path.join(__dirname, "routes")).map((file) => {
+	const route = require(`./routes/${file}`)
+	app.use("/api/v1", route)
+})
 
 app.use(notFound)
 app.use(errorHandler)
