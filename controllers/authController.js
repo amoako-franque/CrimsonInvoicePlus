@@ -7,6 +7,7 @@ const {
 	generateVerifyToken,
 	generateAccessToken,
 } = require("../utils/generateTokens")
+const jwt = require("jsonwebtoken")
 
 exports.register = expressAsyncHandler(async (req, res, next) => {
 	const { username, email, password, firstname, lastname } = req.body
@@ -15,14 +16,12 @@ exports.register = expressAsyncHandler(async (req, res, next) => {
 	if (!username || !email || !password || !firstname || !lastname) {
 		res.status(400)
 		throw new Error("Please fill all fields")
-		return false
 	}
 
 	// validate password
 	if (password && password.length < 8) {
 		res.status(400)
 		throw new Error("Password must be at least 8 characters")
-		return false
 	}
 
 	// check if user exists/ account is linked to user's email
@@ -31,7 +30,6 @@ exports.register = expressAsyncHandler(async (req, res, next) => {
 	if (existingUser) {
 		res.status(400)
 		throw new Error("Account is linked with email provided. Please login")
-		return false
 	}
 
 	// generate salt and hash user password before creating a user
@@ -49,7 +47,6 @@ exports.register = expressAsyncHandler(async (req, res, next) => {
 	if (!user) {
 		res.status(400)
 		throw new Error("Invalid user data")
-		return false
 	}
 
 	const token = generateVerifyToken()
@@ -59,7 +56,7 @@ exports.register = expressAsyncHandler(async (req, res, next) => {
 	})
 
 	// send email to user
-	const verifyLink = `http://localhost:4789/api/v1/auth/verify/${token}/${user.id}`
+	const verifyLink = `http://localhost:4789/api/v1/auth/account-verification/${token}/${user.id}`
 
 	const payload = {
 		firstname: user.firstname,
@@ -87,9 +84,7 @@ exports.register = expressAsyncHandler(async (req, res, next) => {
 		// throw new Error("Something went wrong. Please try again later")
 	}
 })
-//
 
-// accountRouter.post("/verify/:token/:userId")
 exports.verifyUserAccount = expressAsyncHandler(async (req, res, next) => {
 	const { token, userId } = req.params
 
@@ -105,7 +100,7 @@ exports.verifyUserAccount = expressAsyncHandler(async (req, res, next) => {
 		return
 	}
 
-	const verificationToken = await Verification.findOne({ userId })
+	const verificationToken = await Verification.findOne({ userId, token })
 
 	if (!verificationToken) {
 		res.status(400).send("Verification token not found")
@@ -114,6 +109,8 @@ exports.verifyUserAccount = expressAsyncHandler(async (req, res, next) => {
 
 	user.isVerified = true
 	await user.save()
+
+	await Verification.findByIdAndDelete({ _id: verificationToken.id })
 
 	if (user.isVerified) {
 		const emailLink = `${process.env.CLIENT_DOMAIN_URL}/login`
@@ -167,7 +164,6 @@ exports.login = expressAsyncHandler(async (req, res, next) => {
 		if (!isPasswordMatched) {
 			res.status(400)
 			throw new Error("Invalid credentials")
-			return false
 		}
 
 		const accessToken = generateAccessToken({ id: user.id, roles: user.roles })
@@ -224,7 +220,186 @@ exports.login = expressAsyncHandler(async (req, res, next) => {
 	}
 })
 
-// const register = expressAsyncHandler(async (req, res, next) => {})
-// const register = expressAsyncHandler(async (req, res, next) => {})
-// const register = expressAsyncHandler(async (req, res, next) => {})
+exports.resendVerificationToken = expressAsyncHandler(
+	async (req, res, next) => {
+		const { email } = req.body
+		if (!email) {
+			res.status(400).json({ error: "Email is required." })
+			return
+		}
+
+		const user = await User.findOne({ email })
+
+		if (!user) {
+			res.status(400).json({ error: "User not found." })
+			return
+		}
+
+		if (user.isVerified) {
+			res.status(400).json({ error: "Account is already verified." })
+			return
+		}
+
+		const userToken = await Verification.findOne({ userId: user._id })
+
+		if (userToken) {
+			await userToken.deleteOne()
+		}
+
+		const token = generateVerifyToken()
+		await Verification.create({
+			userId: user.id,
+			token,
+		})
+
+		// send email to user
+		const verifyLink = `http://localhost:4789/api/v1/auth/account-verification/${token}/${user.id}`
+
+		const payload = {
+			firstname: user.firstname,
+			link: verifyLink,
+		}
+
+		// try to send the email
+
+		try {
+			await sendMail(
+				user.email,
+				"Account Verification",
+				payload,
+				"./emails/templates/accountVerification.handlebars"
+			)
+
+			res.status(201).json({
+				message: "Please check your email to verify your account",
+				success: true,
+			})
+		} catch (error) {
+			console.log(error)
+			next(error)
+			// res.status(500)
+			// throw new Error("Something went wrong. Please try again later")
+		}
+	}
+)
+
+exports.generateNewAccessToken = expressAsyncHandler(async (req, res, next) => {
+	const cookies = req.cookies
+
+	if (!cookies?._iu_token) {
+		res.status(401).json({ error: "No token found" })
+		return
+	}
+
+	const refreshToken = cookies._iu_token
+
+	const options = {
+		httpOnly: true,
+		maxAge: 24 * 60 * 60 * 1000,
+		sameSite: "none",
+		secure: true,
+	}
+
+	res.clearCookie("_iu_token", options)
+
+	const user = await User.findOne({ refreshToken })
+
+	if (!user) {
+		jwt.verify(
+			refreshToken,
+			process.env.JWT_REFRESH_SECRET_KEY,
+			async (err, userInfo) => {
+				if (err) {
+					return res.sendStatus(403)
+				}
+				const hackedUser = await User.findOne({ _id: userInfo.id })
+
+				if (!hackedUser) {
+					return res.sendStatus(403)
+				}
+
+				hackedUser.refreshToken = []
+				await hackedUser.save()
+			}
+		)
+
+		return res.sendStatus(403)
+	}
+
+	const newRefreshTokenArray = user.refreshToken.filter(
+		(refT) => refT !== refreshToken
+	)
+
+	jwt.verify(
+		refreshToken,
+		process.env.JWT_REFRESH_SECRET_KEY,
+		async (err, useInfo) => {
+			if (err) {
+				user.refreshToken = [...newRefreshTokenArray]
+				await user.save()
+				return res.sendStatus(403)
+			}
+			if (err || user._id.toString() !== decoded.id) {
+				return res.sendStatus(403)
+			}
+
+			const accessToken = generateAccessToken({
+				id: user.id,
+				roles: user.roles,
+			})
+			const refreshToken = generateAccessToken({ id: user.id })
+
+			user.refreshToken = [...newRefreshTokenArray, refreshToken]
+
+			await user.save()
+
+			const options = {
+				httpOnly: true,
+				maxAge: 24 * 60 * 60 * 1000,
+				sameSite: "none",
+				secure: true,
+			}
+
+			res.cookie("_iu_token", refreshToken, options)
+
+			res.status(200).json({ useInfo, accessToken })
+		}
+	)
+})
+
+exports.logout = expressAsyncHandler(async (req, res, next) => {
+	const cookies = req.cookies
+
+	if (!cookies?._iu_token) {
+		return res.status(401).json({ error: "No token found in cookie" })
+	}
+
+	const refreshToken = cookies._iu_token
+
+	const user = await User.findOne({ refreshToken })
+
+	if (!user) {
+		res.clearCookie("_iu_token", {
+			httpOnly: true,
+			sameSite: "none",
+			secure: true,
+		})
+		res.sendStatus(204)
+	}
+
+	user.refreshToken = user.refreshToken.filter((refT) => refT !== refreshToken)
+
+	await user.save()
+
+	res.clearCookie("_iu_token", {
+		httpOnly: true,
+		sameSite: "none",
+		secure: true,
+	})
+
+	res.sendStatus(204).json({
+		success: true,
+		message: "Logged out successfully",
+	})
+})
 // const register = expressAsyncHandler(async (req, res, next) => {})

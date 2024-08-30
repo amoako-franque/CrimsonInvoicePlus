@@ -24,7 +24,12 @@ app.use("/uploads", express.static(path.join(__dirname, "/uploads")))
 
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
-app.use(cors(corsOptions))
+app.use(
+	cors({
+		origin: ["http://localhost:3000", "http://localhost:4789"],
+		credentials: true,
+	})
+)
 app.use(cookieParser())
 app.use(ExpressMongoSanitize())
 app.use(morganMiddleware)

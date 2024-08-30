@@ -8,7 +8,7 @@ const corsOptions = {
 			cb(new Error("Not allowed by CORS"))
 		}
 	},
-	methods: ["GET", "POST", "PUT", "OPTIONS", "DELETE"],
+	methods: ["GET", "POST", "PUT", "DELETE"],
 	Credential: true,
 	optionsSuccessStatus: 200,
 }
