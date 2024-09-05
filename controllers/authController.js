@@ -1,6 +1,7 @@
 const expressAsyncHandler = require("express-async-handler")
 const User = require("../models/userModel")
 const bcrypt = require("bcrypt")
+const crypto = require("crypto")
 const Verification = require("../models/verificationModel")
 const sendMail = require("../utils/sendMail")
 const {
@@ -402,4 +403,95 @@ exports.logout = expressAsyncHandler(async (req, res, next) => {
 		message: "Logged out successfully",
 	})
 })
-// const register = expressAsyncHandler(async (req, res, next) => {})
+
+exports.forgotPassword = expressAsyncHandler(async (req, res, next) => {
+	const { email } = req.body
+	if (!email) {
+		res.status(400)
+		throw new Error("Please enter your email")
+	}
+
+	const user = await User.findOne({ email })
+
+	if (!user) {
+		res.status(400)
+		throw new Error("No user is linked to the the email provided")
+	}
+
+	const resetToken = crypto.randomBytes(32).toString("hex")
+	const token = await Verification.findOne({
+		userId: user._id,
+	})
+
+	if (token) {
+		await token.deleteOne()
+	}
+
+	const resetPassToken = await Verification.create({
+		userId: user._id,
+		token: resetToken,
+	})
+
+	if (user && user.isVerified) {
+		const emailLink = `${process.env.CLIENT_DOMAIN_URL}/auth/reset-password?emailToken=${resetPassToken.token}&userId=${user._id}`
+
+		const payload = {
+			email: user.email,
+			link: emailLink,
+		}
+
+		await sendMail(
+			user.email,
+			"Password Reset Request",
+			payload,
+			"./emails/template/requestResetPassword.handlebars"
+		)
+
+		res.status(200).json({
+			success: true,
+			message: ` Hi ${user.firstname}, a link has been sent to your email. PLease follow the steps to reset your password`,
+		})
+	}
+})
+
+exports.resetPassword = expressAsyncHandler(async (req, res, next) => {
+	const { password, emailToken, userId } = req.body
+
+	if (!password || password.length < 8) {
+		res.status(400)
+		throw new Error("Password must be at least 8 characters")
+	}
+
+	const passwordResetToken = await Verification.findOne({ userId })
+
+	if (!passwordResetToken) {
+		res.status(400)
+		throw new Error("Please try again later. Token expired.")
+	}
+
+	const user = await User.findById({ _id: passwordResetToken.userId })
+
+	if (user && passwordResetToken) {
+		const salt = await bcrypt.genSaltSync(10)
+		const hashedPassword = await bcrypt.hash(password, salt)
+		user.password = hashedPassword
+		await user.save()
+		await passwordResetToken.deleteOne()
+
+		const payload = {
+			firstname: user.firstname,
+		}
+
+		await sendEmail(
+			user.email,
+			"Password Reset Successful",
+			payload,
+			"./emails/template/resetPassword.handlebars"
+		)
+
+		res.status(200).json({
+			success: true,
+			message: "Password reset successfully. Please login to continue",
+		})
+	}
+})

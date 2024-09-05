@@ -11,6 +11,7 @@ const corsOptions = require("./config/corsOptions")
 const mongodbConnection = require("./config/db.config")
 const { notFound, errorHandler } = require("./middlewares/errorHandlers")
 const { morganMiddleware } = require("./middlewares/logger")
+const { apiLimiter } = require("./middlewares/reqLimitter")
 
 // connection to database
 mongodbConnection()
@@ -24,23 +25,15 @@ app.use("/uploads", express.static(path.join(__dirname, "/uploads")))
 
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
-app.use(
-	cors({
-		origin: ["http://localhost:3000", "http://localhost:4789"],
-		credentials: true,
-	})
-)
+app.use(cors(corsOptions))
 app.use(cookieParser())
 app.use(ExpressMongoSanitize())
 app.use(morganMiddleware)
+// use api limiter here
+app.use(apiLimiter)
 
 app.get("/", (req, res) => {
-	res.redirect("http://localhost:4789/logs")
-	// res.status(200).json({ msg: "Crimson Invoice Plus" })
-})
-
-app.get("/logs", (req, res) => {
-	res.status(200).json({ msg: "Welcome home to Crimson Invoice Plus" })
+	res.status(200).json({ msg: "Crimson Invoice Plus" })
 })
 
 const PORT = process.env.PORT || 4789
