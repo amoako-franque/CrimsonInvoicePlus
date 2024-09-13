@@ -1,13 +1,15 @@
+const crypto = require("crypto")
 const mongoose = require("mongoose")
 const validator = require("validator")
-const crypto = require("crypto")
 
-const customerSchema = new mongoose.Schema(
+const Schema = mongoose.Schema
+
+const customerSchema = new Schema(
 	{
 		addedBy: {
-			type: mongoose.Schema.Types.ObjectId,
-			ref: "User",
+			type: Schema.Types.ObjectId,
 			required: true,
+			ref: "User",
 		},
 		name: {
 			type: String,
@@ -17,16 +19,17 @@ const customerSchema = new mongoose.Schema(
 		email: {
 			type: String,
 			required: true,
-			trim: true,
-			unique: true,
 			lowercase: true,
-			validate: [validator.isEmail, "Please enter an email for the customer "],
+			unique: true,
+			validate: [
+				validator.isEmail,
+				"A customer must have a valid email address",
+			],
 		},
-		accountNo: {
-			type: String,
-		},
+		accountNo: String,
 		vatTinNo: {
 			type: Number,
+			default: 0,
 		},
 		address: String,
 		city: String,
@@ -35,23 +38,31 @@ const customerSchema = new mongoose.Schema(
 			type: String,
 			required: true,
 			trim: true,
-			// validate: [validator.isMobilePhone, "Please enter a valid phone number"],
-			unique: true,
-			min: 10,
 			max: 15,
+			min: 10,
 		},
 	},
-	{ timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
+	{
+		timestamps: true,
+		toJSON: { virtuals: true },
+		toObject: { virtuals: true },
+	}
 )
 
 customerSchema.pre("save", async function (next) {
-	this.accountNo = `CRIM-CUS-${crypto
-		.randomBytes(4)
-		.toString("hex")
-		.toUpperCase()}`
+	this.accountNo = `CUS-${crypto.randomBytes(3).toString("hex").toUpperCase()}`
 
 	next()
 })
 
+customerSchema.set("toJSON", {
+	transform: (document, returnedObject) => {
+		returnedObject.id = returnedObject._id.toString()
+		delete returnedObject._id
+		delete returnedObject.__v
+	},
+})
+
 const Customer = mongoose.model("Customer", customerSchema)
+
 module.exports = Customer

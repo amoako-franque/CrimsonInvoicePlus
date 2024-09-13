@@ -66,11 +66,11 @@ const pdfTemplate = ({
     height: 150px;
     }
     .header{
-    font-weight: 100;
+    font-weight: bold;
     text-transform: uppercase;
     color: #555;
     letter-spacing: 2px;
-    font-size: 10px;
+    font-size: 6px;
     line-height: 5px;
     }
     table {
@@ -115,51 +115,71 @@ const pdfTemplate = ({
      <section class="row">
        <div class="column">
          <h3 style="font-size: 14px; text-transform: uppercase;"> <strong>From: </strong></h3>
-         <p style="font-size: 12px">${profile?.businessName}</p>
-         <p style="font-size: 12px">${profile?.email}</p>
-         <p style="font-size: 12px">${profile?.phoneNumber}</p>
-         <p style="font-size: 12px">${
+         <p style="font-size: 8px"><span class="header">Business name: </span>${
+						profile?.businessName
+					}</p>
+         <p style="font-size: 8px"><span class="header">Email: </span>${
+						profile?.email
+					}</p>
+         <p style="font-size: 8px"><span class="header">Phone No.: </span>${
+						profile?.phoneNumber
+					}</p>
+         <p style="font-size: 8px"><span class="header">Address: </span>${
 						profile?.address ? profile.address : ""
 					}</p>
-         <p style="font-size: 12px">${profile?.city ? profile.city : ""}</p>
-         <p style="font-size: 12px">${
+         <p style="font-size: 8px"><span class="header">City: </span>${
+						profile?.city ? profile.city : ""
+					}</p>
+         <p style="font-size: 8px"><span class="header">Country: </span> ${
 						profile?.country ? profile.country : ""
 					}</p>
        </div>
        <div class="column">
          <h3 style="font-size: 14px; text-transform: uppercase;"> <strong>Bill To: </strong></h3>
-         <p style="font-size: 12px">${document?.customer?.name}</p>
-         <p style="font-size: 12px"> <span class="header">No: </span>${
+         <p style="font-size: 8px"><span class="header">Customer's name: </span>${
+						document?.customer?.name
+					}</p>
+         <p style="font-size: 8px"> <span class="header">Account No: </span>${
 						document?.customer?.accountNo
 					}</p>
-         <p style="font-size: 12px"> <span class="header">VAT/TIN No:</span> </>${
+         <p style="font-size: 8px"> <span class="header">VAT/TIN No: </span> </>${
 						document?.customer?.vatTinNo
 					}</p>
-         <p style="font-size: 12px">${document?.customer?.email}</p>
-         <p style="font-size: 12px">${document?.customer?.phoneNumber}</p>
-         <p style="font-size: 12px">${document?.customer?.address}</p>
-         <p style="font-size: 12px">${document?.customer?.city}</p>
-         <p style="font-size: 12px">${document?.customer?.country}</p>
+         <p style="font-size: 12px"><span class="header">Email: </span>${
+						document?.customer?.email
+					}</p>
+         <p style="font-size: 12px"><span class="header">Phone No.: </span>${
+						document?.customer?.phoneNumber
+					}</p>
+         <p style="font-size: 12px"><span class="header">Address: </span>${
+						document?.customer?.address
+					}</p>
+         <p style="font-size: 12px"><span class="header">City: </span>${
+						document?.customer?.city
+					}</p>
+         <p style="font-size: 12px"><span class="header">Country: </span>${
+						document?.customer?.country
+					}</p>
        </div>
        <div class="column">
          <h3 style="font-size: 14px; text-transform: uppercase;"> <strong>Payment Status: </strong></h3>
-         <h4 style="font-size: 12px">${
-						totalAmountReceived >= document?.total ? "Paid" : status
+         <h4 style="font-size: 8px"><span class="header">Status: </span>${
+						document?.status ? "Paid" : status
 					}
      </h4>
      <p class="header">Issued on:</p>
-     <p style="font-size: 12px">
-       ${moment(document?.createdAt).format("DD-MM-YYYY")}
+     <p style="font-size: 8px">
+     ${moment(document?.createdAt).format("DD-MM-YYYY")}
      </p>
      <p class="header">Due on: </p>
-      <p style="font-size: 12px">
-       ${moment(document?.dueDate).format("DD-MM-YYYY")}
+      <p style="font-size: 8px">
+     ${moment(document?.dueDate).format("DD-MM-YYYY")}
      </p>
      <p class="header">Total Amount:</p>
      <p>
        <b><span style="font-size: 16px">${document?.currency}</span></b>
        <b><span style="font-size: 16px">${addCurrencyCommas(
-					document?.total.toFixed(2)
+					document?.total?.toFixed(2)
 				)}</span></b>
      </p>
        </div>
@@ -178,14 +198,14 @@ const pdfTemplate = ({
 					(item, index) =>
 						`<tr>
          <td style="font-size: 10px">${index + 1}</td>
-         <td style="font-size: 10px">${item.itemName}</td>
-         <td style="font-size: 10px">${item.quantity}</td>
-         <td style="font-size: 10px">${item.unitPrice}</td>
-         <td style="font-size: 10px">${item.discount}</td>
+         <td style="font-size: 10px">${item?.itemName}</td>
+         <td style="font-size: 10px">${item?.quantity}</td>
+         <td style="font-size: 10px">${item?.unitPrice}</td>
+         <td style="font-size: 10px">${item?.discount}</td>
          <td style="font-size: 10px">${(
-						item?.quantity * item.unitPrice -
-						(item.quantity * item.unitPrice * item.discount) / 100
-					).toFixed(2)}</td>
+						item?.quantity * item?.unitPrice -
+						(item?.quantity * item?.unitPrice * item?.discount) / 100
+					)?.toFixed(2)}</td>
  </tr>`
 				)}
 
@@ -201,7 +221,7 @@ const pdfTemplate = ({
                <td style="text-align: right; font-size: 10px; font-weight: 700">${
 									document?.currency
 								}
-                 ${addCurrencyCommas(document?.subTotal.toFixed(2))}
+                 ${addCurrencyCommas(document?.subTotal?.toFixed(2))}
                  </td>
              </tr>
              <tr>
@@ -211,15 +231,15 @@ const pdfTemplate = ({
                <td style="text-align: right; font-size: 10px; font-weight: 700">${
 									document?.currency
 								}
-                 ${document?.salesTax.toFixed(1)}
+                 ${document?.salesTax?.toFixed(1)}
                  </td>
              </tr>
               <tr>
                <td style="font-size: 10px">Cumulative Total:</td>
-               <td style="text-align: right; font-size: 10px; font-weight: 700">${
-									document?.currency
-								}
-                 ${addCurrencyCommas(document?.total.toFixed(2))}
+               <td style="text-align: right; font-size: 10px; font-weight: 700">
+               ${document?.currency} ${addCurrencyCommas(
+		document?.total?.toFixed(2)
+	)}
                  </td>
              </tr>
               <tr>
@@ -227,16 +247,22 @@ const pdfTemplate = ({
                <td style="text-align: right; font-size: 10px; font-weight: 700">${
 									document?.currency
 								}
-                 ${addCurrencyCommas(totalAmountReceived.toFixed(2))}
+                 ${addCurrencyCommas(document?.totalAmountReceived?.toFixed(2))}
                  </td>
              </tr>
              <tr>
-               <td style="font-size: 10px">Balance:</td>
-               <td style="text-align: right; font-size: 10px; font-weight: 700">${
+               <td style="font-size: 10px">Balance: ${
+									document?.totalAmountReceived > document?.total
+										? "Credit"
+										: "You owe"
+								} </td>
+               <td style="text-align: right; font-size: 10px; font-weight: 700"> ${
 									document?.currency
 								}
                  ${addCurrencyCommas(
-										Math.round(document?.total - totalAmountReceived).toFixed(2)
+										Math.round(
+											document?.totalAmountReceived - document?.total
+										)?.toFixed(2)
 									)}
                  </td>
              </tr>

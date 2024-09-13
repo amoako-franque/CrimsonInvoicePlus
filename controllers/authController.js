@@ -1,40 +1,45 @@
 const expressAsyncHandler = require("express-async-handler")
-const User = require("../models/userModel")
 const bcrypt = require("bcrypt")
-const crypto = require("crypto")
-const Verification = require("../models/verificationModel")
-const sendMail = require("../utils/sendMail")
-const {
-	generateVerifyToken,
-	generateAccessToken,
-} = require("../utils/generateTokens")
 const jwt = require("jsonwebtoken")
+const crypto = require("crypto")
+const User = require("../models/userModel")
+const Verification = require("../models/verificationModel")
+const sendEmail = require("../utils/sendMail")
+const {
+	createRefreshToken,
+	createAccessToken,
+} = require("../utils/generateTokens")
+const domain_url = process.env.DOMAIN_URL
+const client_domain_url = process.env.CLIENT_DOMAIN_URL
 
 exports.register = expressAsyncHandler(async (req, res, next) => {
 	const { username, email, password, firstname, lastname } = req.body
 
-	// validate user inputs
+	// validation
 	if (!username || !email || !password || !firstname || !lastname) {
 		res.status(400)
-		throw new Error("Please fill all fields")
+		throw new Error("Please add all fields")
+		return false
 	}
 
-	// validate password
-	if (password && password.length < 8) {
+	if (password && password.length < 6) {
 		res.status(400)
-		throw new Error("Password must be at least 8 characters")
+		throw new Error("Password must be at least 6 characters")
+		return false
 	}
 
-	// check if user exists/ account is linked to user's email
-	const existingUser = await User.findOne({ email })
+	// check if user exists
+	const existingUser = await User.findOne({ email }).lean()
 
 	if (existingUser) {
 		res.status(400)
-		throw new Error("Account is linked with email provided. Please login")
+		throw new Error(
+			"The email address you've entered is linked to another account"
+		)
+		return false
 	}
 
-	// generate salt and hash user password before creating a user
-	const salt = await bcrypt.genSaltSync(10)
+	const salt = await bcrypt.genSalt(10)
 	const hashedPassword = await bcrypt.hash(password, salt)
 
 	const user = await User.create({
@@ -47,131 +52,82 @@ exports.register = expressAsyncHandler(async (req, res, next) => {
 
 	if (!user) {
 		res.status(400)
-		throw new Error("Invalid user data")
+		throw new Error("Invalid user data. Please ty again ")
+		return false
 	}
 
-	const token = generateVerifyToken()
-	await Verification.create({
+	const verification_token = crypto.randomBytes(32).toString("hex")
+
+	const email_verification_token = await Verification.create({
 		userId: user.id,
-		token,
+		token: verification_token,
 	})
 
-	// send email to user
-	const verifyLink = `http://localhost:4789/api/v1/auth/account-verification/${token}/${user.id}`
+	const emailLink = `${domain_url}/api/v1/auth/account-verification/${email_verification_token.token}/${user.id}`
 
 	const payload = {
-		firstname: user.firstname,
-		link: verifyLink,
+		name: user.firstname,
+		link: emailLink,
 	}
-
-	// try to send the email
-
 	try {
-		await sendMail(
+		await sendEmail(
 			user.email,
 			"Account Verification",
 			payload,
-			"./emails/templates/accountVerification.handlebars"
+			"./emails/template/accountVerification.handlebars"
 		)
 
 		res.status(201).json({
-			message: "Please check your email to verify your account",
 			success: true,
+			message: `Account created. A Verification email has been sent to your email. Please click on the verification link to verify your account.
+                Verification link expires within 15 minutes`,
 		})
 	} catch (error) {
-		console.log(error)
 		next(error)
-		// res.status(500)
-		// throw new Error("Something went wrong. Please try again later")
-	}
-})
-
-exports.verifyUserAccount = expressAsyncHandler(async (req, res, next) => {
-	const { token, userId } = req.params
-
-	const user = await User.findById(userId)
-
-	if (!user) {
-		res.status(400)
-		throw new Error("User not found")
-	}
-
-	if (user.isVerified) {
-		res.status(400).send("Account verified already. Please login to continue")
-		return
-	}
-
-	const verificationToken = await Verification.findOne({ userId, token })
-
-	if (!verificationToken) {
-		res.status(400).send("Verification token not found")
-		return
-	}
-
-	user.isVerified = true
-	await user.save()
-
-	await Verification.findByIdAndDelete({ _id: verificationToken.id })
-
-	if (user.isVerified) {
-		const emailLink = `${process.env.CLIENT_DOMAIN_URL}/login`
-
-		const payload = {
-			firstname: user.firstname,
-			emailLink,
-		}
-
-		await sendMail(
-			user.email,
-			`Welcome ${user.firstname} - Account verified`,
-			payload,
-			"./emails/templates/welcome.handlebars"
-		)
-
-		res.redirect(`${process.env.CLIENT_DOMAIN_URL}/auth/verify`)
 	}
 })
 
 exports.login = expressAsyncHandler(async (req, res, next) => {
+	const { email, password } = req.body
+
+	if (!email || !password) {
+		res.status(400)
+		throw new Error("Please provide an email and password")
+	}
+
+	const user = await User.findOne({ email }).select("+password")
+
+	if (!user) {
+		return res.status(400).json({ message: "Invalid user credentials" })
+	}
+
+	if (!user.isVerified) {
+		res.status(400)
+		throw new Error(
+			"You have not verified your account yet. Please check your email, a verification email with a link to verify your account. Check your spam folder as well"
+		)
+	}
+
+	if (!user.active) {
+		res.status(400)
+		throw new Error(
+			"Your account have been deactivated by the admin and login is impossible. Contact admin or support team."
+		)
+	}
+
 	try {
-		const { email, password } = req.body
+		const isMatch = await bcrypt.compare(password, user.password)
 
-		if (!email || !password) {
-			res.status(400).json({ error: "Please fill all fields" })
-			return
+		if (!isMatch) {
+			return res.status(400).json({ error: "Invalid user credentials" })
 		}
 
-		const user = await User.findOne({ email })
+		const accessToken = createAccessToken({ id: user._id, roles: user.roles })
 
-		if (!user) {
-			res.status(400)
-			throw new Error("Invalid credentials")
-		}
-
-		if (!user.isVerified) {
-			res.status(400)
-			throw new Error("Please verify your account")
-		}
-
-		if (!user.active) {
-			res.status(400)
-			throw new Error(
-				"Your account has been deactivated. Please contact the Admin"
-			)
-		}
-
-		const isPasswordMatched = await bcrypt.compare(password, user.password)
-
-		if (!isPasswordMatched) {
-			res.status(400)
-			throw new Error("Invalid credentials")
-		}
-
-		const accessToken = generateAccessToken({ id: user.id, roles: user.roles })
-		const refreshToken = generateAccessToken({ id: user.id })
+		const newRefreshToken = createRefreshToken({ id: user._id })
 
 		const cookies = req.cookies
-		//
+
 		let newRefreshTokenArray = !cookies?._iu_token
 			? user.refreshToken
 			: user.refreshToken.filter((refT) => refT !== cookies._iu_token)
@@ -181,7 +137,7 @@ exports.login = expressAsyncHandler(async (req, res, next) => {
 			const existingRefreshToken = await User.findOne({
 				refreshToken,
 				email,
-			})
+			}).exec()
 
 			if (!existingRefreshToken) {
 				newRefreshTokenArray = []
@@ -190,106 +146,54 @@ exports.login = expressAsyncHandler(async (req, res, next) => {
 			const options = {
 				httpOnly: true,
 				maxAge: 24 * 60 * 60 * 1000,
-				sameSite: "none",
 				secure: true,
+				sameSite: "None",
 			}
 
 			res.clearCookie("_iu_token", options)
 		}
 
-		user.refreshToken = [...newRefreshTokenArray, refreshToken]
-
+		user.refreshToken = [...newRefreshTokenArray, newRefreshToken]
 		await user.save()
 
 		const options = {
 			httpOnly: true,
 			maxAge: 24 * 60 * 60 * 1000,
-			sameSite: "none",
 			secure: true,
+			sameSite: "None",
 		}
 
-		res.cookie("_iu_token", refreshToken, options)
+		res.cookie("_iu_token", newRefreshToken, options)
 
 		res.status(200).json({
 			success: true,
-			message: "User logged in successfully",
+			firstname: user.firstname,
+			lastname: user.lastname,
+			username: user.username,
+			provider: user.provider,
+			avatar: user?.avatar || "",
 			accessToken,
-			user,
 		})
 	} catch (error) {
 		next(error)
 	}
 })
-
-exports.resendVerificationToken = expressAsyncHandler(
-	async (req, res, next) => {
-		const { email } = req.body
-		if (!email) {
-			res.status(400).json({ error: "Email is required." })
-			return
-		}
-
-		const user = await User.findOne({ email })
-
-		if (!user) {
-			res.status(400).json({ error: "User not found." })
-			return
-		}
-
-		if (user.isVerified) {
-			res.status(400).json({ error: "Account is already verified." })
-			return
-		}
-
-		const userToken = await Verification.findOne({ userId: user._id })
-
-		if (userToken) {
-			await userToken.deleteOne()
-		}
-
-		const token = generateVerifyToken()
-		await Verification.create({
-			userId: user.id,
-			token,
-		})
-
-		// send email to user
-		const verifyLink = `http://localhost:4789/api/v1/auth/account-verification/${token}/${user.id}`
-
-		const payload = {
-			firstname: user.firstname,
-			link: verifyLink,
-		}
-
-		// try to send the email
-
-		try {
-			await sendMail(
-				user.email,
-				"Account Verification",
-				payload,
-				"./emails/templates/accountVerification.handlebars"
-			)
-
-			res.status(201).json({
-				message: "Please check your email to verify your account",
-				success: true,
-			})
-		} catch (error) {
-			console.log(error)
-			next(error)
-			// res.status(500)
-			// throw new Error("Something went wrong. Please try again later")
-		}
-	}
-)
-
-exports.generateNewAccessToken = expressAsyncHandler(async (req, res, next) => {
+/**
+ * Generates a new access token and refresh token for an authenticated user.
+ * Verifies the provided refresh token, and if valid, creates a new access token and refresh token.
+ * If the refresh token is invalid or the user is not found, it clears the refresh token cookie and sends an appropriate response.
+ * If successful, it sends the new access token, refresh token, and user information in the response.
+ *
+ * @param {Object} req - The Express request object.
+ * @param {Object} res - The Express response object.
+ * @param {Function} next - The next middleware function.
+ * @returns {Promise<void>} - A Promise that resolves when the operation is complete.
+ */
+exports.newAccessToken = expressAsyncHandler(async (req, res, next) => {
 	const cookies = req.cookies
 
 	if (!cookies?._iu_token) {
-		res.status(401).json({ error: "No token found" })
-		return
+		return res.sendStatus(401)
 	}
 
 	const refreshToken = cookies._iu_token
@@ -297,33 +201,28 @@ exports.generateNewAccessToken = expressAsyncHandler(async (req, res, next) => {
 	const options = {
 		httpOnly: true,
 		maxAge: 24 * 60 * 60 * 1000,
-		sameSite: "none",
 		secure: true,
+		sameSite: "None",
 	}
-
 	res.clearCookie("_iu_token", options)
 
-	const user = await User.findOne({ refreshToken })
+	const user = await User.findOne({ refreshToken }).exec()
 
 	if (!user) {
 		jwt.verify(
 			refreshToken,
 			process.env.JWT_REFRESH_SECRET_KEY,
-			async (err, userInfo) => {
+			async (err, decoded) => {
 				if (err) {
 					return res.sendStatus(403)
 				}
-				const hackedUser = await User.findOne({ _id: userInfo.id })
-
-				if (!hackedUser) {
-					return res.sendStatus(403)
-				}
-
+				const hackedUser = await User.findOne({
+					_id: decoded.id,
+				}).exec()
 				hackedUser.refreshToken = []
 				await hackedUser.save()
 			}
 		)
-
 		return res.sendStatus(403)
 	}
 
@@ -334,113 +233,228 @@ exports.generateNewAccessToken = expressAsyncHandler(async (req, res, next) => {
 	jwt.verify(
 		refreshToken,
 		process.env.JWT_REFRESH_SECRET_KEY,
-		async (err, useInfo) => {
+		async (err, decoded) => {
 			if (err) {
 				user.refreshToken = [...newRefreshTokenArray]
 				await user.save()
-				return res.sendStatus(403)
 			}
+
 			if (err || user._id.toString() !== decoded.id) {
 				return res.sendStatus(403)
 			}
 
-			const accessToken = generateAccessToken({
-				id: user.id,
-				roles: user.roles,
-			})
-			const refreshToken = generateAccessToken({ id: user.id })
+			const accessToken = createAccessToken({ id: user._id, roles: user.roles })
 
-			user.refreshToken = [...newRefreshTokenArray, refreshToken]
+			const newRefreshToken = createRefreshToken({ id: user._id })
 
+			user.refreshToken = [...newRefreshTokenArray, newRefreshToken]
 			await user.save()
 
 			const options = {
 				httpOnly: true,
 				maxAge: 24 * 60 * 60 * 1000,
-				sameSite: "none",
 				secure: true,
+				sameSite: "None",
 			}
 
-			res.cookie("_iu_token", refreshToken, options)
-
-			res.status(200).json({ useInfo, accessToken })
+			res.cookie("_iu_token", newRefreshToken, options)
+			res.json({
+				success: true,
+				firstname: user.firstname,
+				lastname: user.lastname,
+				username: user.username,
+				provider: user.provider,
+				avatar: user.avatar,
+				accessToken,
+			})
 		}
 	)
 })
 
-exports.logout = expressAsyncHandler(async (req, res, next) => {
-	const cookies = req.cookies
+exports.accountVerification = expressAsyncHandler(async (req, res, next) => {
+	const { token, userId } = req.params
+
+	const user = await User.findById(userId)
+
+	if (!user) {
+		res.status(400)
+		throw new Error("We were unable to find a user for this token")
+	}
+
+	if (user.isVerified) {
+		res
+			.status(400)
+			.send(" Account verified already. Please login with your credentials ")
+		return false
+	}
+
+	const userToken = await Verification.findOne({
+		userId: user.id,
+		token,
+	})
+
+	if (!userToken) {
+		res.status(400)
+		throw new Error("Token invalid! Your token may have expired")
+	}
+
+	user.isVerified = true
+	await user.save()
+
+	if (user.isVerified) {
+		const emailLink = `${client_domain_url}/login`
+
+		const payload = {
+			name: user.firstname,
+			link: emailLink,
+		}
+
+		await sendEmail(
+			user.email,
+			`Welcome ${user.firstname} - Account Verified`,
+			payload,
+			"./emails/template/welcome.handlebars"
+		)
+
+		res.redirect(`${client_domain_url}/auth/verify`)
+	}
+})
+
+exports.generateVerificationToken = expressAsyncHandler(
+	async (req, res, next) => {
+		const { email } = req.body
+
+		if (!email) {
+			res.status(400)
+			throw new Error("An email must be provided")
+		}
+
+		const user = await User.findOne({ email })
+
+		if (!user) {
+			res.status(400)
+			throw new Error("We were unable to find a user with that email address")
+		}
+
+		if (user.isVerified) {
+			res.status(400)
+			throw new Error(
+				"This account has already been verified. Please login with your credentials"
+			)
+		}
+
+		let verificationToken = await Verification.findOne({
+			userId: user._id,
+		})
+
+		if (verificationToken) {
+			await verificationToken.deleteOne()
+			// await VerificationToken.deleteOne()
+		}
+
+		const new_verification_token = crypto.randomBytes(32).toString("hex")
+
+		const emailToken = await Verification.create({
+			userId: user.id,
+			token: new_verification_token,
+		})
+
+		const emailLink = `${domain_url}/api/v1/auth/account-verification/${emailToken.token}/${user.id}`
+
+		const payload = {
+			name: user.firstname,
+			link: emailLink,
+		}
+
+		await sendEmail(
+			user.email,
+			"Account Verification",
+			payload,
+			"./emails/template/accountVerification.handlebars"
+		)
+
+		res.status(200).json({
+			success: true,
+			message: `${user.firstname}, an email has been sent to your email, please click on the link to verify your account. Verification link expires within 15 minutes`,
+		})
+	}
+)
+
+exports.logout = expressAsyncHandler(async (req, res) => {
+	const cookies = req?.cookies
 
 	if (!cookies?._iu_token) {
-		return res.status(401).json({ error: "No token found in cookie" })
+		res.sendStatus(204)
+		throw new Error("No cookie found")
 	}
 
 	const refreshToken = cookies._iu_token
 
 	const user = await User.findOne({ refreshToken })
-
 	if (!user) {
 		res.clearCookie("_iu_token", {
 			httpOnly: true,
-			sameSite: "none",
 			secure: true,
+			sameSite: "None",
 		})
 		res.sendStatus(204)
 	}
 
-	user.refreshToken = user.refreshToken.filter((refT) => refT !== refreshToken)
-
+	user.refreshToken = user.refreshToken.filter((tk) => tk !== refreshToken)
 	await user.save()
 
 	res.clearCookie("_iu_token", {
 		httpOnly: true,
-		sameSite: "none",
 		secure: true,
+		sameSite: "None",
 	})
 
-	res.sendStatus(204).json({
+	res.status(200).json({
 		success: true,
-		message: "Logged out successfully",
+		message: `${user.firstname},you have been logged out successfully`,
 	})
 })
 
 exports.forgotPassword = expressAsyncHandler(async (req, res, next) => {
 	const { email } = req.body
+
 	if (!email) {
 		res.status(400)
-		throw new Error("Please enter your email")
+		throw new Error("You must enter your email address")
 	}
 
-	const user = await User.findOne({ email })
+	const user = await User.findOne({ email }).exec()
 
 	if (!user) {
 		res.status(400)
-		throw new Error("No user is linked to the the email provided")
+		throw new Error("That email is not associated with any account")
+	}
+
+	let verificationToken = await Verification.findOne({
+		userId: user._id,
+	})
+
+	if (verificationToken) {
+		await verificationToken.deleteOne()
 	}
 
 	const resetToken = crypto.randomBytes(32).toString("hex")
-	const token = await Verification.findOne({
-		userId: user._id,
-	})
 
-	if (token) {
-		await token.deleteOne()
-	}
-
-	const resetPassToken = await Verification.create({
+	const newVerificationToken = await Verification.create({
 		userId: user._id,
 		token: resetToken,
+		createdAt: Date.now(),
 	})
 
 	if (user && user.isVerified) {
-		const emailLink = `${process.env.CLIENT_DOMAIN_URL}/auth/reset-password?emailToken=${resetPassToken.token}&userId=${user._id}`
+		const emailLink = `${client_domain_url}/auth/reset-password?emailToken=${newVerificationToken.token}&userId=${user._id}`
 
 		const payload = {
-			email: user.email,
+			name: user.firstname,
 			link: emailLink,
 		}
 
-		await sendMail(
+		await sendEmail(
 			user.email,
 			"Password Reset Request",
 			payload,
@@ -449,49 +463,85 @@ exports.forgotPassword = expressAsyncHandler(async (req, res, next) => {
 
 		res.status(200).json({
 			success: true,
-			message: ` Hi ${user.firstname}, a link has been sent to your email. PLease follow the steps to reset your password`,
+			message: `Hey ${user.firstname}, an email has been sent to your account with steps to follow to reset your password.`,
 		})
 	}
 })
 
 exports.resetPassword = expressAsyncHandler(async (req, res, next) => {
-	const { password, emailToken, userId } = req.body
+	const { password, userId, emailToken } = req.body
 
-	if (!password || password.length < 8) {
+	if (!password || password.length <= 8) {
 		res.status(400)
-		throw new Error("Password must be at least 8 characters")
+		throw new Error(
+			"Password must be at least 8 characters long, with at least 1 uppercase and lowercase letters and at least 1 symbol"
+		)
 	}
 
 	const passwordResetToken = await Verification.findOne({ userId })
 
 	if (!passwordResetToken) {
 		res.status(400)
-		throw new Error("Please try again later. Token expired.")
+		throw new Error(
+			"Your token is either invalid or expired. Try resetting your password again"
+		)
 	}
 
 	const user = await User.findById({ _id: passwordResetToken.userId })
 
 	if (user && passwordResetToken) {
-		const salt = await bcrypt.genSaltSync(10)
+		const salt = await bcrypt.genSalt(10)
 		const hashedPassword = await bcrypt.hash(password, salt)
 		user.password = hashedPassword
 		await user.save()
-		await passwordResetToken.deleteOne()
 
 		const payload = {
-			firstname: user.firstname,
+			name: user.firstname,
 		}
 
 		await sendEmail(
 			user.email,
-			"Password Reset Successful",
+			"Password Reset Success",
 			payload,
 			"./emails/template/resetPassword.handlebars"
 		)
 
-		res.status(200).json({
+		res.json({
 			success: true,
-			message: "Password reset successfully. Please login to continue",
+			message: `Hey ${user.firstname},Your password reset was successful. An email has been sent to confirm the successful completion of your password reset process`,
 		})
 	}
+})
+
+exports.googleLogin = expressAsyncHandler(async (req, res, next) => {
+	const existingUser = await User.findById(req.user.id)
+
+	const payload = {
+		id: req.user.id,
+		roles: existingUser.roles,
+		firstname: existingUser.firstname,
+		lastname: existingUser.lastname,
+		username: existingUser.username,
+		provider: existingUser.provider,
+		avatar: existingUser.avatar,
+	}
+
+	jwt.sign(
+		payload,
+		process.env.JWT_ACCESS_SECRET_KEY,
+		{ expiresIn: "20m" },
+		(err, token) => {
+			const _iu_token = `${token}`
+
+			const embedJWT = `
+                    <html>
+                        <script>
+                        window.localStorage.setItem("googleToken",'${_iu_token}')
+                        window.location.href='http://localhost:3000/dashboard'
+                        </script>
+                    </html>
+                    `
+			res.send(embedJWT)
+		}
+	)
 })

@@ -5,11 +5,8 @@ require("winston-daily-rotate-file")
 const { combine, timestamp, prettyPrint } = format
 
 const transport = new transports.DailyRotateFile({
-	filename: "logs/crimson-invoice-plus-%DATE%.log",
-	dirname: "logs",
+	filename: "logs/combined-%DATE%.log",
 	datePattern: "YYYY-MM-DD-HH",
-	zippedArchive: true,
-	maxSize: "20m",
 	maxFiles: "14d",
 })
 
@@ -25,12 +22,12 @@ const systemLogs = createLogger({
 		transport,
 		new transports.File({
 			filename: "logs/error.log",
-			level: "error",
+			level: "error", // Log errors only
 		}),
 	],
 	exceptionHandlers: [new transports.File({ filename: "logs/exceptions.log" })],
 	rejectionHandlers: [new transports.File({ filename: "logs/rejections.log" })],
-	exitOnError: false,
+	exitOnError: false, // do not exit on handled exceptions
 })
 
 const morganMiddleware = morgan(
@@ -41,17 +38,20 @@ const morganMiddleware = morgan(
 			status: Number.parseFloat(tokens.status(req, res)),
 			contentLength: tokens.res(req, res, "content-length"),
 			responseTime:
-				Number.parseFloat(tokens["response-time"](req, res)) + " ms",
+				Number.parseFloat(tokens["response-time"](req, res)) + " ms", // in milliseconds
 		})
 	},
 	{
 		stream: {
 			write: (message) => {
 				const data = JSON.parse(message)
-				systemLogs.http(`Incoming ${data.method} request`, data)
+				systemLogs.http(`Incoming ${data.method}  request`, data)
 			},
 		},
 	}
 )
 
-module.exports = { systemLogs, morganMiddleware }
+module.exports = {
+	systemLogs,
+	morganMiddleware,
+}

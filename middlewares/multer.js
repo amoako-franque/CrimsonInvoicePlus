@@ -41,15 +41,14 @@ const checkImageType = (file, cb) => {
 const upload = multer({
 	storage,
 	limit: { fileSize: 1024 * 1024 },
-	fileFilter: checkImageType(file, cb),
-	// fileFilter: (req, file, cb) => {
-	// 	let ext = path.extname(file.originalname)
-	// 	if (ext !== ".png" && ext !== ".jpg" && ext !== ".jpeg") {
-	// 		cb(new Error("File uploaded is not supported"), false)
-	// 		return
-	// 	}
-	// 	cb(null, true)
-	// },
+	fileFilter: (req, file, cb) => {
+		let ext = path.extname(file.originalname)
+		if (ext !== ".png" && ext !== ".jpg" && ext !== ".jpeg") {
+			cb(new Error("File uploaded is not supported"), false)
+			return
+		}
+		cb(null, true)
+	},
 })
 
 module.exports = upload

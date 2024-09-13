@@ -11,7 +11,8 @@
 		"invoice",
 		"receipts",
 		"proforma",
-		"quotes"
+		"quotes",
+    "crimson"
 	],
 	"author": "armoako franque",
 	"license": "ISC",

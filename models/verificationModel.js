@@ -1,26 +1,25 @@
 const mongoose = require("mongoose")
 
-const verificationSchema = new mongoose.Schema({
+const Schema = mongoose.Schema
+
+const verificationSchema = new Schema({
 	userId: {
-		type: mongoose.Schema.Types.ObjectId,
+		type: Schema.Types.ObjectId,
+		required: true,
 		ref: "User",
-		required: true,
 	},
-	token: {
-		type: String,
-		required: true,
-	},
+	token: { type: String, required: true },
 	createdAt: {
 		type: Date,
+		required: true,
 		default: Date.now,
 		expires: 900,
-		required: true,
 	},
 })
 
 verificationSchema.set("toJSON", {
 	transform: (document, returnedObject) => {
-		returnedObject.id = returnedObject._id
+		returnedObject.id = returnedObject._id.toString()
 		delete returnedObject._id
 		delete returnedObject.__v
 	},

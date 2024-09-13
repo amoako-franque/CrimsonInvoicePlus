@@ -1,7 +1,7 @@
-const allowedOptions = [
+const allowedOrigin = [
 	"http://localhost:3000",
-	"http://localhost:3001",
-	"https://crimson-invoice-plus.onrender.com",
+	"http://localhost:5000",
+	"https://localstoreinvoice.com",
 ]
 
-module.exports = allowedOptions
+module.exports = allowedOrigin

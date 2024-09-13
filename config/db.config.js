@@ -1,18 +1,26 @@
 const mongoose = require("mongoose")
 const colors = require("colors")
 const { systemLogs } = require("../middlewares/logger")
+const db_connection = async () => {
+	// connect to mongodb
 
-const mongo_uri = process.env.MONGODB_URL
-
-const mongodbConnection = async () => {
 	try {
-		await mongoose.connect(mongo_uri)
+		await mongoose.connect(process.env.MONGODB_URL)
 
-		console.log("Connection to mongod established".grey)
-		systemLogs.info("Connection to mongod established")
-	} catch (err) {
-		console.log(err)
+		console.log(
+			"Connection to MongoDB is established".blue,
+			mongoose.connection.host
+		)
+
+		systemLogs.info(
+			"Connection to MongoDB is established",
+			mongoose.connection.host
+		)
+		// if connection fail we show/ send user an error message
+	} catch (error) {
+		console.log("Connection to MongoDB failed")
+		console.log({ error })
 	}
 }
 
-module.exports = mongodbConnection
+module.exports = db_connection
